@@ -1,7 +1,7 @@
 // netlify/functions/youtube.js
 // ─────────────────────────────────────────────────────────────
-// YouTube Data API v3 프록시 (디버그 정보 포함 버전)
-// search.list(videoDuration=short, order=viewCount) → videos.list → 60초 이하 필터
+// YouTube Data API v3 프록시
+// search.list로 국가별 짧은 인기 영상 검색 → videos.list → 60초 이하 필터
 // ─────────────────────────────────────────────────────────────
 
 const corsHeaders = {
@@ -24,14 +24,23 @@ function formatViews(n) {
 }
 
 async function fetchRegion(regionCode, apiKey, maxDur, debug) {
-  const langMap = { KR: 'ko', TH: 'th', JP: 'ja', US: 'en' };
+  // 국가별 쇼츠 검색어 — "#shorts" + 국가 키워드로 짧은 인기 영상 검색
+  const queryMap = {
+    KR: '#shorts 쇼츠',
+    TH: '#shorts ไทย',
+    JP: '#shorts ショート',
+    US: '#shorts',
+  };
+  const q = encodeURIComponent(queryMap[regionCode] || '#shorts');
+
+  // search: q 기반, videoDuration=short, 조회수순. relevanceLanguage 제거(과한 필터 방지)
   const searchUrl = 'https://www.googleapis.com/youtube/v3/search'
     + '?part=snippet'
     + '&type=video'
+    + '&q=' + q
     + '&videoDuration=short'
     + '&order=viewCount'
     + '&regionCode=' + regionCode
-    + '&relevanceLanguage=' + (langMap[regionCode] || 'en')
     + '&maxResults=50'
     + '&key=' + apiKey;
 
@@ -69,7 +78,7 @@ async function fetchRegion(regionCode, apiKey, maxDur, debug) {
   });
 
   if (debug) {
-    debug[regionCode].durations = all.map(s => s.dur).sort((a,b)=>a-b);
+    debug[regionCode].durations = all.map(s => s.dur).sort((a, b) => a - b);
     debug[regionCode].under60 = all.filter(s => s.dur > 0 && s.dur <= maxDur).length;
   }
 
