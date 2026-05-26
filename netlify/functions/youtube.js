@@ -1,8 +1,8 @@
 // netlify/functions/youtube.js
 // ─────────────────────────────────────────────────────────────
 // YouTube Data API v3 프록시
-// search.list: publishedAfter(최근 7일) + order=date(최신순)
-// → 국가별 "최근 7일 이내 최신 업로드" 영상. 길이 제한 없음(모든 길이).
+// search.list: publishedAfter(최근 2일) + order=viewCount(조회수순)
+// → 국가별 "최근 2일 이내 급상승 화제작". 길이 제한 없음(모든 길이).
 // videos.list로 조회수·길이·해시태그 보강.
 // ─────────────────────────────────────────────────────────────
 
@@ -38,7 +38,7 @@ async function fetchRegion(regionCode, apiKey, count, days, debug) {
     + '?part=snippet'
     + '&type=video'
     + '&q=' + q
-    + '&order=date'                       // 최신 업로드 순
+    + '&order=viewCount'                  // 조회수 순 (급상승 화제작)
     + '&publishedAfter=' + encodeURIComponent(after)  // 최근 N일 이내
     + '&regionCode=' + regionCode
     + '&maxResults=50'
@@ -84,10 +84,10 @@ async function fetchRegion(regionCode, apiKey, count, days, debug) {
     debug[regionCode].withViews = all.filter(s => s.viewCount > 0).length;
   }
 
-  // 길이 제한 없음(정상 영상만). 최신 업로드 순으로 정렬 후 count개.
+  // 길이 제한 없음(정상 영상만). 조회수 높은 순으로 정렬 후 count개.
   return all
     .filter(s => s.dur > 0)
-    .sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt))
+    .sort((a, b) => b.viewCount - a.viewCount)
     .slice(0, count);
 }
 
