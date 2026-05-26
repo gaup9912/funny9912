@@ -29,15 +29,18 @@ async function fetchRegion(regionCode, apiKey, count, days, debug) {
   // 최근 N일 전 시각 (RFC3339)
   const after = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
-  // 1단계: search.list — 최근 N일 이내 업로드, 최신순, 해당 국가
-  //  q 없이 regionCode만 주면 그 나라의 최신 인기 영상이 폭넓게 잡힘
+  // 국가별 폭넓은 검색어 — order=date는 q가 있어야 결과가 잘 나옴
+  const qMap = { KR: '한국', TH: 'ไทย', JP: '日本', US: 'viral' };
+  const q = encodeURIComponent(qMap[regionCode] || 'trending');
+
+  // 1단계: search.list — 최근 N일 이내 업로드, 최신순
   const searchUrl = 'https://www.googleapis.com/youtube/v3/search'
     + '?part=snippet'
     + '&type=video'
+    + '&q=' + q
     + '&order=date'                       // 최신 업로드 순
     + '&publishedAfter=' + encodeURIComponent(after)  // 최근 N일 이내
     + '&regionCode=' + regionCode
-    + '&relevanceLanguage=' + (regionCode === 'KR' ? 'ko' : regionCode === 'TH' ? 'th' : regionCode === 'JP' ? 'ja' : 'en')
     + '&maxResults=50'
     + '&key=' + apiKey;
 
