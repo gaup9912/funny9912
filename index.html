@@ -426,14 +426,17 @@ function _callClaude() {
 }
 function extractSkeleton(short) {
   var t = short.title;
-  var words = t.split(/\s+/);
+  var words = t.split(/\s+/).filter(Boolean);
+  var tags = short.hashtags || [];
+  var tagLens = tags.map(h => (h.startsWith('#') ? h.length - 1 : h.length));
   return {
     titleLen: t.length,
     wordCount: words.length,
     spacingPattern: words.map(w => w.length),
-    avgWordLen: (words.reduce((a, b) => a + b.length, 0) / words.length).toFixed(1),
+    avgWordLen: words.length ? (words.reduce((a, b) => a + b.length, 0) / words.length).toFixed(1) : '0',
     duration: short.dur,
-    hashtagCount: short.hashtags.length,
+    hashtagCount: tags.length,
+    hashtagAvgLen: tagLens.length ? (tagLens.reduce((a, b) => a + b, 0) / tagLens.length).toFixed(1) : '0',
     rhythmKey: words.map(w => w.length > 4 ? '━' : w.length > 2 ? '─' : '·').join('  ')
   };
 }
@@ -447,7 +450,7 @@ function formatViews(n) {
   if (n > 1e3) return (n / 1e3).toFixed(0) + 'K';
   return String(n);
 }
-var STAGE_LABELS = [['I', 'Global Index'], ['II', 'Pattern Extraction'], ['III', 'Compose Brief'], ['IV', 'Director\'s Cut'], ['V', 'Revision'], ['VI', 'Distribution']];
+var STAGE_LABELS = [['I', 'Global Index'], ['II', 'Select Short'], ['III', 'DNA Anatomy'], ['IV', 'Compose Brief'], ['V', "Director's Cut"], ['VI', 'Distribution']];
 
 // ═══════════════════════════════════════════════════════════
 // MAIN
@@ -559,7 +562,7 @@ function ThaiShortsLab() {
         var r = yield fetch('/.netlify/functions/youtube', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ regions: ['KR', 'TH', 'JP', 'US'], maxDur: 60 })
+          body: JSON.stringify({ regions: ['KR', 'TH', 'JP', 'US'], count: 12 })
         });
         var j = yield r.json();
         if (!r.ok || j.error) {
@@ -578,7 +581,7 @@ function ThaiShortsLab() {
         });
         var totalFound = krData.length + thData.length + jpData.length + usData.length;
         if (totalFound === 0) {
-          setError('60초 이하 실시간 인기 쇼츠를 찾지 못했습니다. (Netlify 환경변수 YOUTUBE_API_KEY 또는 쿼터를 확인하세요. 가짜 데이터는 제공하지 않습니다.)');
+          setError('실시간 인기 영상을 찾지 못했습니다. (Netlify 환경변수 YOUTUBE_API_KEY 또는 쿼터를 확인하세요. 가짜 데이터는 제공하지 않습니다.)');
         } else if (regionErrors.length > 0) {
           setError('일부 국가 로드 실패: ' + regionErrors.join(', ') + ' (해당 섹션은 비어 있습니다. 가짜 데이터로 채우지 않습니다.)');
         }
@@ -605,7 +608,7 @@ function ThaiShortsLab() {
       // 백그라운드에서 바이럴 분석 시작
       setAnalyzing(true);
       try {
-        var userMsg = "[\uBD84\uC11D \uB300\uC0C1 \uC601\uC0C1]\n\uC81C\uBAA9: \"".concat(t.title, "\"\n\uC9C0\uC5ED: ").concat(t.region, "\n\uC870\uD68C\uC218: ").concat(t.views, "\n\uC601\uC0C1 \uAE38\uC774: ").concat(t.dur, "\uCD08\n\uD574\uC2DC\uD0DC\uADF8: ").concat(t.hashtags.join(' '), "\n\n\uC774 \uC601\uC0C1\uC774 ").concat(t.region, " \uC778\uAE30 1~5\uC704\uC5D0 \uB4E0 \uC774\uC720\uB97C \uBCF8\uC9C8\uC801\uC73C\uB85C \uBD84\uC11D\uD574\uC8FC\uC138\uC694.");
+        var userMsg = "[\uBD84\uC11D \uB300\uC0C1 \uC601\uC0C1]\n\uC81C\uBAA9: \"".concat(t.title, "\"\n\uC9C0\uC5ED: ").concat(t.region, "\n\uC870\uD68C\uC218: ").concat(t.views, "\n\uC601\uC0C1 \uAE38\uC774: ").concat(t.dur, "\uCD08\n\uD574\uC2DC\uD0DC\uADF8: ").concat(t.hashtags.join(' '), "\n\n\uC774 \uC601\uC0C1\uC774 ").concat(t.region, " \uC2E4\uC2DC\uAC04 \uC778\uAE30 \uCC28\uD2B8\uC5D0 \uC624\uB978 \uC774\uC720\uB97C \uBCF8\uC9C8\uC801\uC73C\uB85C \uBD84\uC11D\uD574\uC8FC\uC138\uC694.");
         var analysis = yield callClaude(PERSONA_ANALYST, userMsg);
         setViralAnalysis(analysis);
       } catch (e) {
@@ -641,7 +644,7 @@ function ThaiShortsLab() {
         }
 
         // SNS 기획자 — 바이럴 분석 + 사용자 입력 받음
-        var userMsg1 = "[\uC6D0\uBCF8 \uC601\uC0C1\uC758 \uBC14\uC774\uB7F4 DNA]\n".concat(JSON.stringify(viralAnalysis, null, 2), "\n\n[\uAE30\uC220 \uBA54\uD0C0\uB370\uC774\uD130]\n\uC81C\uBAA9: \"").concat(target.title, "\" (").concat(skeleton.titleLen, "\uC790, ").concat(skeleton.wordCount, "\uB2E8\uC5B4)\n\uC601\uC0C1 \uAE38\uC774: ").concat(skeleton.duration, "\uCD08\n\uB744\uC5B4\uC4F0\uAE30 \uB9AC\uB4EC: ").concat(skeleton.rhythmKey, "\n\uD574\uC2DC\uD0DC\uADF8: ").concat(target.hashtags.join(' '), "\n\n[\uC0AC\uC6A9\uC790\uAC00 \uD64D\uBCF4\uD560 \uAC83]\n\uBA54\uC2DC\uC9C0: ").concat(userInput.text, "\n\uC0AC\uC6A9\uC790 \uD574\uC2DC\uD0DC\uADF8: ").concat(userInput.hashtags, "\n\uC774\uBBF8\uC9C0: ").concat(userInput.image ? '제공됨 (영상의 시작 프레임 / 주인공으로 사용)' : '없음', "\n\n\uC704 \uBC14\uC774\uB7F4 DNA\uC758 hookType\uACFC emotionalArc\uB97C \uADF8\uB300\uB85C \uCC28\uC6A9\uD558\uBA74\uC11C, \uC0AC\uC6A9\uC790\uC758 \uBA54\uC2DC\uC9C0\uB97C \uB07C\uC6CC \uB123\uC5B4 \uB9C8\uC2A4\uD130 \uD50C\uB79C\uC744 \uC9DC\uC8FC\uC138\uC694.");
+        var userMsg1 = "[\uC6D0\uBCF8 \uC601\uC0C1\uC758 \uBC14\uC774\uB7F4 DNA]\n".concat(JSON.stringify(viralAnalysis, null, 2), "\n\n[\uAE30\uC220 \uBA54\uD0C0\uB370\uC774\uD130]\n\uC81C\uBAA9: \"").concat(target.title, "\" (").concat(skeleton.titleLen, "\uC790, ").concat(skeleton.wordCount, "\uB2E8\uC5B4)\n\uC601\uC0C1 \uAE38\uC774: ").concat(skeleton.duration, "\uCD08\n\uB744\uC5B4\uC4F0\uAE30 \uB9AC\uB4EC: ").concat(skeleton.rhythmKey, "\n\uD574\uC2DC\uD0DC\uADF8: ").concat(target.hashtags.join(' '), "\n\n[\uC0AC\uC6A9\uC790\uAC00 \uC120\uD0DD\uD55C \uC601\uC0C1\uACFC \uB611\uAC19\uC774 \uB9DE\uCD94\uC138\uC694 \u2014 \uCD5C\uC6B0\uC120 KPI]\n- \uC81C\uBAA9 \uAE00\uC790\uC218: ").concat(skeleton.titleLen, "\uC790 \xB12 \uC774\uB0B4\n- \uB2E8\uC5B4 \uC218: ").concat(skeleton.wordCount, "\uAC1C \uB3D9\uC77C\n- \uB2E8\uC5B4\uBCC4 \uAE38\uC774 \uD328\uD134: ").concat(skeleton.spacingPattern.join('·'), "\n- \uD574\uC2DC\uD0DC\uADF8 \uAC1C\uC218: ").concat(skeleton.hashtagCount, "\uAC1C \uB3D9\uC77C\n- \uD574\uC2DC\uD0DC\uADF8 \uD3C9\uADE0 \uAE00\uC790\uC218: ").concat(skeleton.hashtagAvgLen, "\uC790 \xB11 \uC774\uB0B4\n\n[\uC0AC\uC6A9\uC790\uAC00 \uD64D\uBCF4\uD560 \uAC83]\n\uBA54\uC2DC\uC9C0: ").concat(userInput.text, "\n\uC0AC\uC6A9\uC790 \uD574\uC2DC\uD0DC\uADF8: ").concat(userInput.hashtags, "\n\uC774\uBBF8\uC9C0: ").concat(userInput.image ? '제공됨 (영상의 시작 프레임 / 주인공으로 사용)' : '없음', "\n\n\uC704 \uBC14\uC774\uB7F4 DNA\uC758 hookType\uACFC emotionalArc\uB97C \uADF8\uB300\uB85C \uCC28\uC6A9\uD558\uBA74\uC11C, \uC0AC\uC6A9\uC790\uC758 \uBA54\uC2DC\uC9C0\uB97C \uB07C\uC6CC \uB123\uC5B4 \uB9C8\uC2A4\uD130 \uD50C\uB79C\uC744 \uC9DC\uC8FC\uC138\uC694. \uAC00\uC7A5 \uC911\uC694\uD55C \uAC83\uC740 \uC704 [\uC0AC\uC6A9\uC790\uAC00 \uC120\uD0DD\uD55C \uC601\uC0C1\uACFC \uB611\uAC19\uC774 \uB9DE\uCD94\uC138\uC694] \uBE14\uB85D\uC758 \uC81C\uBAA9 \uAE00\uC790\uC218\xB7\uB2E8\uC5B4 \uC218\xB7\uB744\uC5B4\uC4F0\uAE30 \uD328\uD134\xB7\uD574\uC2DC\uD0DC\uADF8 \uAC1C\uC218\uB97C \uC815\uD655\uD788 \uBCF5\uC81C\uD558\uB294 \uAC83\uC785\uB2C8\uB2E4.");
         var plan = yield callClaude(PERSONA_SNS, userMsg1);
         setMasterPlan(plan);
 
@@ -931,10 +934,9 @@ function ThaiShortsLab() {
 
   // 유튜브 업로드 — 백엔드 OAuth 흐름 트리거
   function uploadYoutube() {
-    var meta = composeUploadMetadata();
     var title = (masterPlan === null || masterPlan === void 0 ? void 0 : masterPlan.hookTitle) || '';
     var tags = ((masterPlan === null || masterPlan === void 0 ? void 0 : masterPlan.hashtags) || []).join(' ');
-    alert("\uD83C\uDFAC \uC720\uD29C\uBE0C \uC5C5\uB85C\uB4DC \uBA54\uD0C0\uB370\uC774\uD130 (\uBC31\uC5D4\uB4DC \uC790\uB3D9 \uC804\uC1A1 \uC608\uC815)\n\n\uC81C\uBAA9: ".concat(title, "\n\uD574\uC2DC\uD0DC\uADF8: ").concat(tags, "\n\n\uC2E4\uC81C OAuth \uC778\uC99D + \uC5C5\uB85C\uB4DC\uB294 backend.py\uC758 /auth/google \u2192 /upload/youtube \uC5D4\uB4DC\uD3EC\uC778\uD2B8\uC5D0\uC11C \uCC98\uB9AC\uB429\uB2C8\uB2E4. Google Cloud Console\uC5D0\uC11C OAuth 2.0 \uD074\uB77C\uC774\uC5B8\uD2B8 ID\uB97C \uBC1C\uAE09\uBC1B\uC544 backend.py\uC5D0 \uC124\uC815\uD558\uC138\uC694."));
+    alert("\uD83C\uDFAC \uC601\uC0C1 \uC81C\uC791 \uC548\uB0B4 (\uBC18\uC790\uB3D9 \uC6CC\uD06C\uD50C\uB85C\uC6B0)\n\n1. Movement IV(Director's Cut)\uC5D0\uC11C Veo 3.1 \uD504\uB86C\uD504\uD2B8\uB97C \uBCF5\uC0AC\n2. Google Veo 3.1(AI Studio)\uC5D0 \uBD99\uC5EC\uB123\uACE0 \uC774\uBBF8\uC9C0 \uC5C5\uB85C\uB4DC\n3. \uC5EC\uB7EC \uBC88 \uC0DD\uC131\uD574 best \uCEF7 \uC120\uD0DD\n4. CapCut\uC73C\uB85C \uD074\uB9BD \uC787\uACE0 \uC790\uB9C9 \uC5BB\uAE30\n5. YouTube\uC5D0 \uC544\uB798 \uC81C\uBAA9\xB7\uD574\uC2DC\uD0DC\uADF8\uB85C \uC5C5\uB85C\uB4DC\n\n\uC81C\uBAA9: ".concat(title, "\n\uD574\uC2DC\uD0DC\uADF8: ").concat(tags, "\n\n(\uC790\uB3D9 \uC5C5\uB85C\uB4DC\uB294 backend.py + Google OAuth \uC5F0\uACB0 \uC2DC \uAC00\uB2A5)"));
   }
   function reset() {
     setStage(0);
@@ -1450,7 +1452,7 @@ function ThaiShortsLab() {
       fontSize: 10,
       color: 'var(--gold)'
     }
-  }, "\xB7 regionCode=KR/TH/JP/US \xB7 60\uCD08 \uC774\uD558 \uC218\uC9D1 \u2192 15\uCD08 \uC0DD\uC131 \xB7 4 units per fetch"))), /*#__PURE__*/React.createElement("nav", {
+  }, "\xB7 regionCode=KR/TH/JP/US \xB7 \uC2E4\uC2DC\uAC04 \uC778\uAE30 \uCC28\uD2B8(\uC804\uCCB4 \uAE38\uC774) \u2192 15\uCD08 \uC0DD\uC131 \xB7 \uB9E4 \uC0C8\uB85C\uACE0\uCE68\uB9C8\uB2E4 \uAC31\uC2E0"))), /*#__PURE__*/React.createElement("nav", {
     className: "mb-16 flex flex-wrap gap-2 py-4 hr-thin border-b",
     style: {
       borderColor: 'var(--line)'
@@ -1534,6 +1536,10 @@ function ThaiShortsLab() {
       color: 'var(--mute)'
     }
   }, /*#__PURE__*/React.createElement("span", null, "End of quad index \xB7 KR ", trends.kr.length, " + TH ", trends.th.length, " + JP ", trends.jp.length, " + US ", trends.us.length, " entries"), /*#__PURE__*/React.createElement("button", {
+    onClick: () => fetchTrends(),
+    className: "link-underline",
+    style: { marginRight: 16 }
+  }, "\uD83D\uDD04 \uC2E4\uC2DC\uAC04 \uC0C8\uB85C\uACE0\uCE68"), /*#__PURE__*/React.createElement("button", {
     onClick: () => setStage(0),
     className: "link-underline"
   }, "\u2190 Return to prelude"))), stage === 2 && target && skeleton && /*#__PURE__*/React.createElement("section", {
@@ -2032,619 +2038,7 @@ function ThaiShortsLab() {
   }, /*#__PURE__*/React.createElement("button", {
     onClick: () => setStage(2),
     className: "link-underline"
-  }, "\u2190 Edit submission"))), stage === 4 && masterPlan && production && /*#__PURE__*/React.createElement("section", {
-    className: "reveal"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "mb-12"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "small-caps mb-3",
-    style: {
-      color: 'var(--gold)'
-    }
-  }, "Movement Four"), /*#__PURE__*/React.createElement("h2", {
-    className: "serif",
-    style: {
-      fontSize: 56,
-      fontWeight: 300,
-      lineHeight: 1
-    }
-  }, "The ", /*#__PURE__*/React.createElement("span", {
-    className: "italic-serif"
-  }, "Director's Cut"))), /*#__PURE__*/React.createElement("div", {
-    className: "grid lg:grid-cols-12 gap-10"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "lg:col-span-3"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "small-caps mb-3",
-    style: {
-      color: 'var(--gold)'
-    }
-  }, "Preview \xB7 9:16"), /*#__PURE__*/React.createElement("div", {
-    className: "frame-canvas"
-  }, /*#__PURE__*/React.createElement("canvas", {
-    ref: canvasRef,
-    className: "block w-full"
-  })), /*#__PURE__*/React.createElement("p", {
-    className: "serif italic mt-3",
-    style: {
-      fontSize: 12,
-      color: 'var(--mute)',
-      lineHeight: 1.5
-    }
-  }, "\uC815\uC801 \uD504\uB9AC\uBDF0. \uCD5C\uC885 MP4\uB294 backend.py\uC758 MoviePy \uC5D4\uB4DC\uD3EC\uC778\uD2B8\uC5D0\uC11C \uD569\uC131\uB429\uB2C8\uB2E4.")), /*#__PURE__*/React.createElement("div", {
-    className: "lg:col-span-6 space-y-10"
-  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    className: "flex items-baseline justify-between mb-4"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "small-caps",
-    style: {
-      color: 'var(--gold)'
-    }
-  }, "\u03B2. Strategist's Master Plan"), /*#__PURE__*/React.createElement("div", {
-    className: "serif italic",
-    style: {
-      fontSize: 12,
-      color: 'var(--mute)'
-    }
-  }, "JSON \xB7 structured")), /*#__PURE__*/React.createElement("h3", {
-    className: "serif",
-    style: {
-      fontSize: 30,
-      fontWeight: 400,
-      lineHeight: 1.25,
-      color: 'var(--paper)'
-    }
-  }, "\"", masterPlan.hookTitle, "\""), /*#__PURE__*/React.createElement("p", {
-    className: "serif italic mt-3",
-    style: {
-      fontSize: 14,
-      color: 'var(--paper-dim)'
-    }
-  }, "\u2014 ", masterPlan.hookRationale), /*#__PURE__*/React.createElement("div", {
-    className: "mt-8 grid grid-cols-2 gap-x-8 gap-y-3 mono",
-    style: {
-      fontSize: 12
-    }
-  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    className: "tracker-label mb-2"
-  }, "Rhythm"), /*#__PURE__*/React.createElement("div", null, (masterPlan.rhythm || []).join(' · '))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    className: "tracker-label mb-2"
-  }, "Hashtags"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      color: 'var(--gold)'
-    }
-  }, (masterPlan.hashtags || []).join(' ')))), /*#__PURE__*/React.createElement("div", {
-    className: "mt-6"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "tracker-label mb-3"
-  }, "Caption Timings"), /*#__PURE__*/React.createElement("ul", {
-    className: "space-y-1 mono",
-    style: {
-      fontSize: 12
-    }
-  }, (masterPlan.captionTimings || []).map((c, i) => /*#__PURE__*/React.createElement("li", {
-    key: i,
-    className: "flex gap-6"
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: 'var(--gold)',
-      width: 32
-    }
-  }, c.t, "s"), /*#__PURE__*/React.createElement("span", null, "\"", c.text, "\""))))), /*#__PURE__*/React.createElement("div", {
-    className: "mt-6 serif italic py-3 px-4",
-    style: {
-      borderLeft: '2px solid var(--gold)',
-      color: 'var(--paper)'
-    }
-  }, "CTA: ", masterPlan.ctaLine)), /*#__PURE__*/React.createElement("div", {
-    className: "hr-thin"
-  }), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    className: "flex items-baseline justify-between mb-4"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "small-caps",
-    style: {
-      color: 'var(--gold)'
-    }
-  }, "\u03B3. Director's Note"), /*#__PURE__*/React.createElement("div", {
-    className: "serif italic",
-    style: {
-      fontSize: 12,
-      color: 'var(--mute)'
-    }
-  }, "Bangkok translation")), /*#__PURE__*/React.createElement("p", {
-    className: "serif italic",
-    style: {
-      fontSize: 19,
-      lineHeight: 1.5,
-      color: 'var(--paper)'
-    }
-  }, "\"", production.directorNote, "\""), production.thaiAdConcept && /*#__PURE__*/React.createElement("div", {
-    className: "mt-5 py-4 px-5",
-    style: {
-      background: 'rgba(196,74,106,0.10)',
-      borderLeft: '2px solid var(--th)'
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "tracker-label mb-2",
-    style: {
-      color: 'var(--th)'
-    }
-  }, "Thai Ad Concept \xB7 \uD0DC\uAD6D \uAD11\uACE0\uC2DD \uBCD1\uB9DB \uC7A5\uCE58"), /*#__PURE__*/React.createElement("p", {
-    className: "serif italic",
-    style: {
-      fontSize: 15,
-      lineHeight: 1.6,
-      color: 'var(--paper)'
-    }
-  }, production.thaiAdConcept)), production.imageRole && userInput.image && /*#__PURE__*/React.createElement("div", {
-    className: "mt-6 py-4 px-5",
-    style: {
-      background: 'rgba(201,163,94,0.08)',
-      borderLeft: '2px solid var(--gold)'
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "tracker-label mb-2",
-    style: {
-      color: 'var(--gold)'
-    }
-  }, "Image Role \xB7 \uC0AC\uC6A9\uC790 \uC774\uBBF8\uC9C0\uC758 \uC5ED\uD560"), /*#__PURE__*/React.createElement("p", {
-    className: "serif italic",
-    style: {
-      fontSize: 14,
-      lineHeight: 1.6,
-      color: 'var(--paper)'
-    }
-  }, production.imageRole)), /*#__PURE__*/React.createElement("div", {
-    className: "mt-6 mono",
-    style: {
-      fontSize: 11,
-      background: 'var(--ink-2)',
-      padding: 16,
-      color: 'var(--paper-dim)'
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "tracker-label mb-2",
-    style: {
-      color: 'var(--gold)'
-    }
-  }, "Veo 3.1 Prompt ", /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: 'var(--mute)'
-    }
-  }, "\xB7 0-8s \xB7 image-to-video")), production.veoPrompt, /*#__PURE__*/React.createElement("button", {
-    onClick: function () { try { navigator.clipboard.writeText(production.veoPrompt || ''); } catch (e) {} },
-    className: "mt-3 small-caps",
-    style: {
-      display: 'block',
-      background: 'var(--gold)',
-      color: 'var(--ink)',
-      border: 'none',
-      padding: '8px 14px',
-      cursor: 'pointer',
-      fontSize: 11
-    }
-  }, "\uD83D\uDCCB Veo\uC5D0 \uBD99\uC5EC\uB123\uAE30 \xB7 \uD504\uB86C\uD504\uD2B8 \uBCF5\uC0AC")), production.veoPromptPart2 && /*#__PURE__*/React.createElement("div", {
-    className: "mt-4 mono",
-    style: {
-      fontSize: 11,
-      background: 'var(--ink-2)',
-      padding: 16,
-      color: 'var(--paper-dim)'
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "tracker-label mb-2",
-    style: {
-      color: 'var(--gold)'
-    }
-  }, "Veo 3.1 Prompt \xB7 8-15s \xB7 \uBC18\uC804\xB7\uD074\uB77C\uC774\uB9E5\uC2A4"), production.veoPromptPart2, /*#__PURE__*/React.createElement("button", {
-    onClick: function () { try { navigator.clipboard.writeText(production.veoPromptPart2 || ''); } catch (e) {} },
-    className: "mt-3 small-caps",
-    style: {
-      display: 'block',
-      background: 'var(--gold)',
-      color: 'var(--ink)',
-      border: 'none',
-      padding: '8px 14px',
-      cursor: 'pointer',
-      fontSize: 11
-    }
-  }, "\uD83D\uDCCB \uB450 \uBC88\uC9F8 \uD074\uB9BD \uBCF5\uC0AC")), production.audioDirection && /*#__PURE__*/React.createElement("div", {
-    className: "mt-5 py-4 px-5",
-    style: {
-      background: 'rgba(91,123,176,0.10)',
-      borderLeft: '2px solid var(--jp)'
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "tracker-label mb-2",
-    style: {
-      color: 'var(--jp)'
-    }
-  }, "Audio \xB7 \uC74C\uC131\xB7\uD6A8\uACFC\uC74C\xB7\uBC30\uACBD\uC74C"), /*#__PURE__*/React.createElement("p", {
-    className: "serif italic",
-    style: {
-      fontSize: 14,
-      lineHeight: 1.6,
-      color: 'var(--paper)'
-    }
-  }, production.audioDirection)), /*#__PURE__*/React.createElement("div", {
-    className: "mt-8 space-y-5"
-  }, (production.storyboard || []).map((s, i) => /*#__PURE__*/React.createElement("div", {
-    key: i,
-    className: "grid grid-cols-12 gap-4 py-4 hr-thin"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "col-span-2 drop-num",
-    style: {
-      fontSize: 36
-    }
-  }, String(s.scene).padStart(2, '0')), /*#__PURE__*/React.createElement("div", {
-    className: "col-span-10"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "small-caps mb-2",
-    style: {
-      color: 'var(--gold)'
-    }
-  }, s.time), /*#__PURE__*/React.createElement("div", {
-    className: "serif",
-    style: {
-      fontSize: 16,
-      color: 'var(--paper)'
-    }
-  }, s.action), /*#__PURE__*/React.createElement("div", {
-    className: "serif italic mt-2",
-    style: {
-      fontSize: 13,
-      color: 'var(--paper-dim)'
-    }
-  }, "\"", s.onScreenText, "\""), /*#__PURE__*/React.createElement("div", {
-    className: "mono mt-2",
-    style: {
-      fontSize: 11,
-      color: 'var(--mute)'
-    }
-  }, (s.cameraMove ? '\uD83C\uDFA5 ' + s.cameraMove + ' ' : '') + (s.cinematicNote || s.thaiVibe || '')))))), /*#__PURE__*/React.createElement("div", {
-    className: "mt-6 small-caps",
-    style: {
-      color: 'var(--mute)'
-    }
-  }, "Sound \u2014 ", production.soundCue))), /*#__PURE__*/React.createElement("aside", {
-    className: "lg:col-span-3"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "small-caps mb-4",
-    style: {
-      color: 'var(--gold)'
-    }
-  }, "Editorial Notes"), /*#__PURE__*/React.createElement("div", {
-    className: "flex flex-col",
-    style: {
-      minHeight: 480,
-      border: '1px solid var(--line)',
-      background: 'var(--ink-2)'
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "flex-1 overflow-y-auto p-4 space-y-3",
-    style: {
-      maxHeight: 380
-    }
-  }, feedback.length === 0 && /*#__PURE__*/React.createElement("p", {
-    className: "serif italic",
-    style: {
-      fontSize: 13,
-      color: 'var(--mute)',
-      lineHeight: 1.6
-    }
-  }, "\uD53C\uB4DC\uBC31\uC744 \uB0A8\uAE30\uBA74 AI\uAC00 \uB450 \uD398\uB974\uC18C\uB098\uC758 \uACB0\uACFC\uBB3C\uC744 \uC989\uC2DC \uC7AC\uAD6C\uC131\uD569\uB2C8\uB2E4.", /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), "\uC608: \"\uAC10\uB3D9 \uD1A4 \uB354 \uAC15\uD558\uAC8C\", \"\uB9C8\uC9C0\uB9C9\uC5D0 \uAC00\uACA9 \uBC15\uC544\uC918\", \"\uCF54\uBBF8\uB514 \uC904\uC774\uACE0 \uC9C4\uC9C0\uD558\uAC8C.\""), feedback.map((m, i) => /*#__PURE__*/React.createElement("div", {
-    key: i,
-    className: "serif",
-    style: {
-      fontSize: 13,
-      lineHeight: 1.5
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "small-caps mb-1",
-    style: {
-      color: m.role === 'user' ? 'var(--gold)' : 'var(--paper-dim)'
-    }
-  }, m.role === 'user' ? 'You' : 'AI'), /*#__PURE__*/React.createElement("div", {
-    style: {
-      color: 'var(--paper)'
-    }
-  }, m.text))), revising && /*#__PURE__*/React.createElement("div", {
-    className: "flex items-center gap-2 small-caps",
-    style: {
-      color: 'var(--gold)'
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    className: "pulse"
-  }), " revising")), /*#__PURE__*/React.createElement("div", {
-    className: "border-t flex items-center",
-    style: {
-      borderColor: 'var(--line)'
-    }
-  }, /*#__PURE__*/React.createElement("input", {
-    type: "text",
-    value: feedbackInput,
-    onChange: e => setFeedbackInput(e.target.value),
-    onKeyDown: e => e.key === 'Enter' && sendFeedback(),
-    placeholder: listening ? '듣는 중…' : 'Your note…',
-    className: "flex-1 p-3 serif italic bg-transparent outline-none",
-    style: {
-      fontSize: 13,
-      color: 'var(--paper)'
-    }
-  }), /*#__PURE__*/React.createElement("button", {
-    onClick: listening ? stopVoiceInput : startVoiceInput,
-    disabled: revising,
-    className: "px-3 disabled:opacity-30 transition-colors",
-    style: {
-      color: listening ? 'var(--rose)' : 'var(--gold)'
-    },
-    title: "\uD83C\uDF99 \uC74C\uC131 \uC785\uB825 (\uD55C\uAD6D\uC5B4)"
-  }, listening ? /*#__PURE__*/React.createElement("span", {
-    className: "pulse",
-    style: {
-      background: 'var(--rose)'
-    }
-  }) : /*#__PURE__*/React.createElement(IconMic, {
-    size: 14
-  })), /*#__PURE__*/React.createElement("button", {
-    onClick: sendFeedback,
-    disabled: revising,
-    className: "px-3 disabled:opacity-30",
-    style: {
-      color: 'var(--gold)'
-    }
-  }, /*#__PURE__*/React.createElement(IconSend, {
-    size: 14
-  }))), /*#__PURE__*/React.createElement("div", {
-    className: "px-3 py-1.5 mono",
-    style: {
-      fontSize: 9,
-      color: 'var(--mute)',
-      borderTop: '1px solid var(--line)'
-    }
-  }, "\uD83D\uDCAC \uD14D\uC2A4\uD2B8 \uB610\uB294 \uD83C\uDF99 \uC74C\uC131 (\uD55C\uAD6D\uC5B4)")), /*#__PURE__*/React.createElement("button", {
-    onClick: () => setStage(5),
-    className: "btn-ghost mt-6 w-full flex items-center justify-center gap-2"
-  }, "Proceed to distribution ", /*#__PURE__*/React.createElement(IconArrow, {
-    size: 14
-  })))), /*#__PURE__*/React.createElement("div", {
-    className: "mt-24 pt-12 hr-gold"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "flex items-baseline justify-between mb-10 flex-wrap gap-4"
-  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    className: "small-caps mb-3",
-    style: {
-      color: 'var(--gold)'
-    }
-  }, "Movement IV\xB7b \xB7 \uD3B8\uC9D1\uC2E4"), /*#__PURE__*/React.createElement("h3", {
-    className: "serif",
-    style: {
-      fontSize: 42,
-      fontWeight: 300,
-      lineHeight: 1
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    className: "italic-serif"
-  }, "Editing"), " Suite")), /*#__PURE__*/React.createElement("div", {
-    className: "flex gap-3"
-  }, /*#__PURE__*/React.createElement("button", {
-    onClick: autoTighten,
-    disabled: tightening,
-    className: "btn-ghost flex items-center gap-2",
-    style: {
-      fontSize: 13
-    }
-  }, tightening ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("span", {
-    className: "pulse"
-  }), " tightening\u2026") : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(IconTarget, {
-    size: 14
-  }), " Auto-tighten pattern")), /*#__PURE__*/React.createElement("button", {
-    onClick: () => renderPreview(masterPlan, production),
-    className: "btn-ghost flex items-center gap-2",
-    style: {
-      fontSize: 13
-    }
-  }, /*#__PURE__*/React.createElement(IconRefresh, {
-    size: 14
-  }), " Re-render"))), /*#__PURE__*/React.createElement("div", {
-    className: "grid md:grid-cols-12 gap-10"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "md:col-span-5"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "small-caps mb-4",
-    style: {
-      color: 'var(--gold)'
-    }
-  }, "\u03B1. Pattern Match Audit"), /*#__PURE__*/React.createElement("p", {
-    className: "serif italic mb-6",
-    style: {
-      fontSize: 14,
-      color: 'var(--paper-dim)',
-      lineHeight: 1.6
-    }
-  }, "\uC6D0\uBCF8 1\uC704 \uC601\uC0C1\uC758 \uC81C\uBAA9 \uAE00\uC790\uC218\xB7\uB2E8\uC5B4 \uC218\xB7\uD574\uC2DC\uD0DC\uADF8 \uAC1C\uC218\uC640 \uBCF5\uC81C\uBCF8\uC744 \uC790\uB3D9 \uBE44\uAD50\uD569\uB2C8\uB2E4. \u26A0\uFE0F \uAC00 \uBCF4\uC774\uBA74 [Auto-tighten]\uC744 \uB20C\uB7EC AI\uC5D0\uAC8C \uB354 \uC5C4\uACA9\uD788 \uB2E4\uC2DC \uC9DC\uB77C\uACE0 \uC694\uCCAD."), (() => {
-    var replicaTitle = masterPlan.hookTitle || '';
-    var replicaLen = replicaTitle.length;
-    var replicaWords = replicaTitle.split(/\s+/).filter(Boolean).length;
-    var replicaTags = (masterPlan.hashtags || []).length;
-    var replicaTagAvg = replicaTags ? (masterPlan.hashtags.reduce((a, b) => a + b.length, 0) / replicaTags).toFixed(1) : 0;
-    var checkLen = Math.abs(replicaLen - skeleton.titleLen) <= 2;
-    var checkWords = replicaWords === skeleton.wordCount;
-    var checkTags = replicaTags === skeleton.hashtagCount;
-    var checkTagAvg = Math.abs(replicaTagAvg - parseFloat(skeleton.hashtagAvgLen)) <= 1;
-    return /*#__PURE__*/React.createElement("div", {
-      className: "space-y-0"
-    }, /*#__PURE__*/React.createElement(MatchRow, {
-      label: "\uC81C\uBAA9 \uAE00\uC790\uC218",
-      origin: "".concat(skeleton.titleLen, "\uC790"),
-      replica: "".concat(replicaLen, "\uC790"),
-      ok: checkLen,
-      delta: replicaLen - skeleton.titleLen
-    }), /*#__PURE__*/React.createElement(MatchRow, {
-      label: "\uB2E8\uC5B4 \uC218",
-      origin: "".concat(skeleton.wordCount, "\uAC1C"),
-      replica: "".concat(replicaWords, "\uAC1C"),
-      ok: checkWords,
-      delta: replicaWords - skeleton.wordCount
-    }), /*#__PURE__*/React.createElement(MatchRow, {
-      label: "\uD574\uC2DC\uD0DC\uADF8 \uAC1C\uC218",
-      origin: "".concat(skeleton.hashtagCount, "\uAC1C"),
-      replica: "".concat(replicaTags, "\uAC1C"),
-      ok: checkTags,
-      delta: replicaTags - skeleton.hashtagCount
-    }), /*#__PURE__*/React.createElement(MatchRow, {
-      label: "\uD574\uC2DC\uD0DC\uADF8 \uD3C9\uADE0 \uAE00\uC790\uC218",
-      origin: "".concat(skeleton.hashtagAvgLen, "\uC790"),
-      replica: "".concat(replicaTagAvg, "\uC790"),
-      ok: checkTagAvg,
-      delta: (replicaTagAvg - skeleton.hashtagAvgLen).toFixed(1)
-    }), /*#__PURE__*/React.createElement(MatchRow, {
-      label: "\uC6D0\uBCF8 \uB9AC\uB4EC \uD328\uD134",
-      origin: skeleton.spacingPattern.join('·'),
-      replica: replicaTitle.split(/\s+/).filter(Boolean).map(w => w.length).join('·'),
-      ok: null,
-      delta: null
-    }));
-  })()), /*#__PURE__*/React.createElement("div", {
-    className: "md:col-span-7"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "small-caps mb-4",
-    style: {
-      color: 'var(--gold)'
-    }
-  }, "\u03B2. Inline Editor \xB7 \uC9C1\uC811 \uC218\uC815"), /*#__PURE__*/React.createElement("div", {
-    className: "mb-6"
-  }, /*#__PURE__*/React.createElement("label", {
-    className: "mono mb-2 block",
-    style: {
-      fontSize: 10,
-      color: 'var(--mute)',
-      letterSpacing: '0.15em',
-      textTransform: 'uppercase'
-    }
-  }, "Hook Title ", /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: 'var(--gold)'
-    }
-  }, "\xB7 ", ((_masterPlan$hookTitle = masterPlan.hookTitle) === null || _masterPlan$hookTitle === void 0 ? void 0 : _masterPlan$hookTitle.length) || 0, "\uC790")), /*#__PURE__*/React.createElement("input", {
-    type: "text",
-    value: masterPlan.hookTitle || '',
-    onChange: e => updateHookTitle(e.target.value),
-    className: "input-line serif italic w-full",
-    style: {
-      fontSize: 22,
-      color: 'var(--paper)'
-    }
-  })), /*#__PURE__*/React.createElement("div", {
-    className: "mb-6"
-  }, /*#__PURE__*/React.createElement("label", {
-    className: "mono mb-2 block",
-    style: {
-      fontSize: 10,
-      color: 'var(--mute)',
-      letterSpacing: '0.15em',
-      textTransform: 'uppercase'
-    }
-  }, "Caption Timings"), (masterPlan.captionTimings || []).map((c, i) => /*#__PURE__*/React.createElement("div", {
-    key: i,
-    className: "flex gap-3 items-baseline py-2 hr-dot"
-  }, /*#__PURE__*/React.createElement("input", {
-    type: "number",
-    value: c.t,
-    onChange: e => updateCaption(i, 't', e.target.value),
-    className: "input-line mono",
-    style: {
-      width: 60,
-      fontSize: 13,
-      color: 'var(--gold)'
-    },
-    step: "0.5"
-  }), /*#__PURE__*/React.createElement("span", {
-    className: "mono",
-    style: {
-      fontSize: 10,
-      color: 'var(--mute)'
-    }
-  }, "s"), /*#__PURE__*/React.createElement("input", {
-    type: "text",
-    value: c.text,
-    onChange: e => updateCaption(i, 'text', e.target.value),
-    className: "input-line serif italic flex-1",
-    style: {
-      fontSize: 14,
-      color: 'var(--paper)'
-    }
-  })))), /*#__PURE__*/React.createElement("div", {
-    className: "mb-6"
-  }, /*#__PURE__*/React.createElement("label", {
-    className: "mono mb-2 block",
-    style: {
-      fontSize: 10,
-      color: 'var(--mute)',
-      letterSpacing: '0.15em',
-      textTransform: 'uppercase'
-    }
-  }, "Hashtags ", /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: 'var(--gold)'
-    }
-  }, "\xB7 ", (masterPlan.hashtags || []).length, "\uAC1C")), /*#__PURE__*/React.createElement("div", {
-    className: "flex flex-wrap gap-2"
-  }, (masterPlan.hashtags || []).map((h, i) => /*#__PURE__*/React.createElement("input", {
-    key: i,
-    type: "text",
-    value: h,
-    onChange: e => updateHashtag(i, e.target.value),
-    className: "mono px-2 py-1",
-    style: {
-      fontSize: 12,
-      background: 'var(--ink-2)',
-      border: '1px solid var(--line)',
-      color: 'var(--gold)',
-      width: "".concat(Math.max(h.length, 8), "ch")
-    }
-  })))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
-    className: "mono mb-2 block",
-    style: {
-      fontSize: 10,
-      color: 'var(--mute)',
-      letterSpacing: '0.15em',
-      textTransform: 'uppercase'
-    }
-  }, "CTA Line"), /*#__PURE__*/React.createElement("input", {
-    type: "text",
-    value: masterPlan.ctaLine || '',
-    onChange: e => updateCTA(e.target.value),
-    className: "input-line serif italic w-full",
-    style: {
-      fontSize: 16,
-      color: 'var(--paper)'
-    }
-  })))), /*#__PURE__*/React.createElement("div", {
-    className: "mt-12"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "small-caps mb-4",
-    style: {
-      color: 'var(--gold)'
-    }
-  }, "\u03B3. Fill-in-the-Blank Mask \xB7 \uBE48\uCE78 \uCC44\uC6B0\uAE30"), /*#__PURE__*/React.createElement("p", {
-    className: "serif italic mb-5",
-    style: {
-      fontSize: 14,
-      color: 'var(--paper-dim)',
-      lineHeight: 1.6,
-      maxWidth: 720
-    }
-  }, "\uC6D0\uBCF8 #1 \uC601\uC0C1\uC758 \uC81C\uBAA9\uACFC \uD574\uC2DC\uD0DC\uADF8\uB97C \u25CF\u25CF \uBAA8\uC591\uC758 \uB9C8\uC2A4\uD06C\uB85C \uBCC0\uD658\uD588\uC2B5\uB2C8\uB2E4. \uC704 [Inline Editor]\uC5D0\uC11C \uC81C\uBAA9\uC744 \uC218\uC815\uD560 \uB54C \uC774 \uB9C8\uC2A4\uD06C\uB97C \uBCF4\uACE0 \uAE00\uC790\uC218\uC640 \uB744\uC5B4\uC4F0\uAE30\uB97C \uC815\uD655\uD788 \uB611\uAC19\uC774 \uB9DE\uCD94\uC138\uC694. \uC608\uC2DC:", /*#__PURE__*/React.createElement("span", {
-    className: "mono mx-2",
-    style: {
-      color: 'var(--gold)'
-    }
-  }, "\"\uAC00\uC744 \uD558\uB298\uC5D0 \uC788\uB2E4\" \u2192 \u25CF\u25CF \u25CF\u25CF\u25CF \u25CF\u25CF")), /*#__PURE__*/React.createElement(TitleTemplate, {
-    target: target,
-    masterPlan: masterPlan,
-    skeleton: skeleton
-  })))), stage === 5 && /*#__PURE__*/React.createElement("section", {
+  }, "\u2190 Edit submission"))), stage === 4 && masterPlan && production && /*#__PURE__*/React.createElement("section", { className: "reveal" }, /*#__PURE__*/React.createElement("div", { className: "mb-12" }, /*#__PURE__*/React.createElement("div", { className: "small-caps mb-3", style: { color: "var(--gold)" } }, "Movement Four"), /*#__PURE__*/React.createElement("h2", { className: "serif", style: { fontSize: 56, fontWeight: 300, lineHeight: 1 } }, "The ", /*#__PURE__*/React.createElement("span", { className: "italic-serif" }, "Director\u2019s Cut"))), /*#__PURE__*/React.createElement("p", { className: "serif italic", style: { fontSize: 19, lineHeight: 1.5, color: "var(--paper)", maxWidth: 760 } }, "\u201c", production.directorNote, "\u201d"), production.thaiAdConcept && /*#__PURE__*/React.createElement("div", { className: "mt-6 py-4 px-5", style: { background: "rgba(196,74,106,0.10)", borderLeft: "2px solid var(--th)", maxWidth: 760 } }, /*#__PURE__*/React.createElement("div", { className: "tracker-label mb-2", style: { color: "var(--th)" } }, "\ud0dc\uad6d \uad11\uace0\uc2dd \ubcd1\ub9db \uc7a5\uce58"), /*#__PURE__*/React.createElement("p", { className: "serif italic", style: { fontSize: 15, lineHeight: 1.6, color: "var(--paper)" } }, production.thaiAdConcept)), production.imageRole && userInput.image && /*#__PURE__*/React.createElement("div", { className: "mt-4 py-4 px-5", style: { background: "rgba(201,163,94,0.08)", borderLeft: "2px solid var(--gold)", maxWidth: 760 } }, /*#__PURE__*/React.createElement("div", { className: "tracker-label mb-2", style: { color: "var(--gold)" } }, "\ub0b4 \uc774\ubbf8\uc9c0\uc758 \uc5ed\ud560"), /*#__PURE__*/React.createElement("p", { className: "serif italic", style: { fontSize: 14, lineHeight: 1.6, color: "var(--paper)" } }, production.imageRole)), /*#__PURE__*/React.createElement("div", { className: "mt-8 mono", style: { fontSize: 13, background: "var(--ink-2)", padding: 20, color: "var(--paper)", lineHeight: 1.7 } }, /*#__PURE__*/React.createElement("div", { className: "tracker-label mb-3", style: { color: "var(--gold)" } }, "Veo 3.1 Prompt \u00b7 0-8\ucd08 \u00b7 \uc601\uc0c1 \uc0dd\uc131 \ud504\ub86c\ud504\ud2b8"), production.veoPrompt, /*#__PURE__*/React.createElement("button", { onClick: function () { try { navigator.clipboard.writeText(production.veoPrompt || ""); alert("\ubcf5\uc0ac\ub410\uc5b4\uc694! Veo 3.1\uc5d0 \ubd99\uc5ec\ub123\uc73c\uc138\uc694."); } catch (e) {} }, style: { display: "block", marginTop: 16, background: "var(--gold)", color: "var(--ink)", border: "none", padding: "12px 20px", cursor: "pointer", fontSize: 13, fontWeight: 600, width: "100%" } }, "\ud83d\udccb \uc774 \ud504\ub86c\ud504\ud2b8 \ubcf5\uc0ac\ud558\uae30")), production.veoPromptPart2 && /*#__PURE__*/React.createElement("div", { className: "mt-5 mono", style: { fontSize: 13, background: "var(--ink-2)", padding: 20, color: "var(--paper)", lineHeight: 1.7 } }, /*#__PURE__*/React.createElement("div", { className: "tracker-label mb-3", style: { color: "var(--gold)" } }, "Veo 3.1 Prompt \u00b7 8-15\ucd08 \u00b7 \ubc18\uc804\u00b7\ud074\ub77c\uc774\ub9e5\uc2a4"), production.veoPromptPart2, /*#__PURE__*/React.createElement("button", { onClick: function () { try { navigator.clipboard.writeText(production.veoPromptPart2 || ""); alert("\ub450 \ubc88\uc9f8 \ud074\ub9bd \ud504\ub86c\ud504\ud2b8\uac00 \ubcf5\uc0ac\ub410\uc5b4\uc694!"); } catch (e) {} }, style: { display: "block", marginTop: 16, background: "var(--gold)", color: "var(--ink)", border: "none", padding: "12px 20px", cursor: "pointer", fontSize: 13, fontWeight: 600, width: "100%" } }, "\ud83d\udccb \ub450 \ubc88\uc9f8 \ud074\ub9bd \ud504\ub86c\ud504\ud2b8 \ubcf5\uc0ac")), production.audioDirection && /*#__PURE__*/React.createElement("div", { className: "mt-5 py-4 px-5", style: { background: "rgba(91,123,176,0.10)", borderLeft: "2px solid var(--jp)", maxWidth: 760 } }, /*#__PURE__*/React.createElement("div", { className: "tracker-label mb-2", style: { color: "var(--jp)" } }, "\ud83d\udd0a \uc74c\uc131\u00b7\ud6a8\uacfc\uc74c\u00b7\ubc30\uacbd\uc74c"), /*#__PURE__*/React.createElement("p", { className: "serif italic", style: { fontSize: 14, lineHeight: 1.6, color: "var(--paper)" } }, production.audioDirection)), (production.storyboard || []).length > 0 && /*#__PURE__*/React.createElement("div", { className: "mt-8 space-y-4", style: { maxWidth: 760 } }, /*#__PURE__*/React.createElement("div", { className: "tracker-label mb-2", style: { color: "var(--gold)" } }, "Storyboard"), (production.storyboard || []).map(function (sc, i) { return /*#__PURE__*/React.createElement("div", { key: i, className: "grid grid-cols-12 gap-4 py-3 hr-thin" }, /*#__PURE__*/React.createElement("div", { className: "col-span-2 drop-num", style: { fontSize: 32 } }, String(sc.scene).padStart(2, "0")), /*#__PURE__*/React.createElement("div", { className: "col-span-10" }, /*#__PURE__*/React.createElement("div", { className: "small-caps mb-1", style: { color: "var(--gold)" } }, sc.time), /*#__PURE__*/React.createElement("div", { className: "serif", style: { fontSize: 15, color: "var(--paper)" } }, sc.action), sc.onScreenText && /*#__PURE__*/React.createElement("div", { className: "serif italic mt-1", style: { fontSize: 13, color: "var(--paper-dim)" } }, "\u201c", sc.onScreenText, "\u201d"), (sc.cameraMove || sc.cinematicNote) && /*#__PURE__*/React.createElement("div", { className: "mono mt-1", style: { fontSize: 11, color: "var(--mute)" } }, (sc.cameraMove ? "\ud83c\udfa5 " + sc.cameraMove + " " : "") + (sc.cinematicNote || "")))); })), /*#__PURE__*/React.createElement("div", { className: "mt-10 py-6 px-6", style: { background: "var(--ink-2)", maxWidth: 760 } }, /*#__PURE__*/React.createElement("div", { className: "tracker-label mb-3", style: { color: "var(--gold)" } }, "\uc5c5\ub85c\ub4dc\uc6a9 \uc81c\ubaa9\u00b7\ud574\uc2dc\ud0dc\uadf8"), /*#__PURE__*/React.createElement("div", { className: "serif", style: { fontSize: 18, color: "var(--paper)", marginBottom: 8 } }, masterPlan.hookTitle), /*#__PURE__*/React.createElement("div", { className: "mono", style: { fontSize: 12, color: "var(--gold)" } }, (masterPlan.hashtags || []).join(" "))), production.soundCue && /*#__PURE__*/React.createElement("div", { className: "mt-6 small-caps", style: { color: "var(--mute)" } }, "Sound \u2014 ", production.soundCue), production.colorGrade && /*#__PURE__*/React.createElement("div", { className: "mt-1 small-caps", style: { color: "var(--mute)" } }, "Color \u2014 ", production.colorGrade), production.veoSettings && /*#__PURE__*/React.createElement("div", { className: "mt-1 small-caps", style: { color: "var(--mute)" } }, "Settings \u2014 ", production.veoSettings), /*#__PURE__*/React.createElement("button", { onClick: function () { setStage(5); }, className: "btn-ghost mt-10 w-full flex items-center justify-center gap-2" }, "\uc5c5\ub85c\ub4dc \ub9c8\uc2a4\ud06c \ubcf4\uae30 ", /*#__PURE__*/React.createElement(IconArrow, { size: 14 }))), stage === 5 && /*#__PURE__*/React.createElement("section", {
     className: "reveal"
   }, /*#__PURE__*/React.createElement("div", {
     className: "mb-12"
@@ -2846,12 +2240,12 @@ function ThaiShortsLab() {
       color: 'var(--paper-dim)',
       lineHeight: 1.6
     }
-  }, "Google OAuth 2.0\uC73C\uB85C \uC989\uC2DC \uC778\uC99D. \uACC4\uC815 \uC815\uBCF4\uB294 \uC11C\uBC84\uC5D0 \uC800\uC7A5\uB418\uC9C0 \uC54A\uC73C\uBA70, \uC5C5\uB85C\uB4DC \uC9C1\uD6C4 \uD1A0\uD070\uC774 \uD3D0\uAE30\uB429\uB2C8\uB2E4."), /*#__PURE__*/React.createElement("div", {
+  }, "Google Veo 3.1 \uD504\uB86C\uD504\uD2B8\uB294 Movement IV(Director's Cut)\uC5D0 \uC788\uC2B5\uB2C8\uB2E4. \uADF8\uAC83\uC744 \uBCF5\uC0AC\uD574 Veo\uC5D0\uC11C \uC601\uC0C1\uC744 \uB9CC\uB4E0 \uB4A4, \uC774 \uC81C\uBAA9\xB7\uD574\uC2DC\uD0DC\uADF8\uB85C \uC5C5\uB85C\uB4DC\uD558\uC138\uC694."), /*#__PURE__*/React.createElement("div", {
     className: "mt-8 small-caps flex items-center gap-2",
     style: {
       color: 'var(--gold)'
     }
-  }, "Authenticate and publish ", /*#__PURE__*/React.createElement(IconArrow, {
+  }, "\uC81C\uC791 \uC548\uB0B4 \uBCF4\uAE30 ", /*#__PURE__*/React.createElement(IconArrow, {
     size: 12
   })))), /*#__PURE__*/React.createElement("div", {
     className: "hr-thin mt-1 mb-16"
@@ -2871,7 +2265,7 @@ function ThaiShortsLab() {
     style: {
       color: 'var(--gold)'
     }
-  }, "The Zero Retention Promise"), /*#__PURE__*/React.createElement("h3", {
+  }, "\uBC18\uC790\uB3D9 \uC6CC\uD06C\uD50C\uB85C\uC6B0"), /*#__PURE__*/React.createElement("h3", {
     className: "serif italic",
     style: {
       fontSize: 28,
@@ -2879,19 +2273,14 @@ function ThaiShortsLab() {
       lineHeight: 1.3,
       color: 'var(--paper)'
     }
-  }, "When the work is finished, nothing remains."), /*#__PURE__*/React.createElement("p", {
+  }, "\uD504\uB86C\uD504\uD2B8\uB294 \uC6B0\uB9AC\uAC00, \uC601\uD654\uAE09 \uC601\uC0C1\uC740 Veo\uAC00."), /*#__PURE__*/React.createElement("p", {
     className: "serif mt-4",
     style: {
       fontSize: 15,
       lineHeight: 1.7,
       color: 'var(--paper-dim)'
     }
-  }, "\uC138\uC158 \uD1A0\uD070, \uC5C5\uB85C\uB4DC \uC774\uBBF8\uC9C0, \uC0DD\uC131\uB41C \uC601\uC0C1 \u2014 \uBAA8\uB450 \uC11C\uBC84\uC5D0\uC11C \uC601\uAD6C \uC0AD\uC81C\uB429\uB2C8\uB2E4. \uBC31\uC5D4\uB4DC \uB77C\uC774\uD504\uC0AC\uC774\uD074: ", /*#__PURE__*/React.createElement("span", {
-    className: "mono",
-    style: {
-      fontSize: 12
-    }
-  }, "/session/", '{id}', "/destroy"), " \uD638\uCD9C \u2192 tmp \uD30C\uC77C unlink \u2192 \uBA54\uBAA8\uB9AC \uCE90\uC2DC invalidate."))), /*#__PURE__*/React.createElement("div", {
+  }, "\uC774 \uC571\uC740 \uD2B8\uB80C\uB4DC \uBD84\uC11D \u2192 \uD0DC\uAD6D \uAD11\uACE0\uC2DD \uBCD1\uB9DB \uAE30\uD68D \u2192 \uC601\uD654\uAE09 Veo \uD504\uB86C\uD504\uD2B8\xB7\uC790\uB9C9\xB7\uB9C8\uC2A4\uD06C\uB97C \uB9CC\uB4ED\uB2C8\uB2E4. \uC2E4\uC81C \uC601\uC0C1\uC740 Veo 3.1\uC5D0\uC11C \uC5EC\uB7EC \uBC88 \uC0DD\uC131\uD574 best \uCEF7\uC744 \uACE0\uB974\uACE0, CapCut\uC73C\uB85C \uD3B8\uC9D1\uD574 \uC644\uC131\uD569\uB2C8\uB2E4."))), /*#__PURE__*/React.createElement("div", {
     className: "text-center mt-12"
   }, /*#__PURE__*/React.createElement("button", {
     onClick: reset,
@@ -3373,7 +2762,7 @@ function RegionSection(_ref1) {
       fontSize: 15,
       borderTop: '1px solid var(--line)'
     }
-  }, "이 국가에서 60초 이하 실시간 인기 쇼츠를 찾지 못했습니다. (가짜 데이터로 채우지 않습니다)") : /*#__PURE__*/React.createElement("div", {
+  }, "이 국가에서 실시간 인기 영상을 찾지 못했습니다. (가짜 데이터로 채우지 않습니다)") : /*#__PURE__*/React.createElement("div", {
     className: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
   }, items.map((s, idx) => /*#__PURE__*/React.createElement("article", {
     key: s.id,
@@ -3414,7 +2803,7 @@ function RegionSection(_ref1) {
     }
   }, s.region), /*#__PURE__*/React.createElement("div", {
     className: "reel-meta-bar"
-  }, s.views, " \xB7 ", s.dur, "s"), /*#__PURE__*/React.createElement("div", {
+  }, s.views, " \xB7 ", s.dur >= 60 ? Math.floor(s.dur / 60) + ":" + String(s.dur % 60).padStart(2, '0') : s.dur + "s"), /*#__PURE__*/React.createElement("div", {
     className: "reel-play-btn",
     onClick: () => setPlayingId(s.id)
   }, /*#__PURE__*/React.createElement("div", {
