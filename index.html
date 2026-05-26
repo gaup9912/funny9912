@@ -562,7 +562,7 @@ function ThaiShortsLab() {
         var r = yield fetch('/.netlify/functions/youtube', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ regions: ['KR', 'TH', 'JP', 'US'], count: 12 })
+          body: JSON.stringify({ regions: ['KR', 'TH', 'JP', 'US'], count: 12, days: 7 })
         });
         var j = yield r.json();
         if (!r.ok || j.error) {
@@ -1452,7 +1452,7 @@ function ThaiShortsLab() {
       fontSize: 10,
       color: 'var(--gold)'
     }
-  }, "\xB7 regionCode=KR/TH/JP/US \xB7 \uC2E4\uC2DC\uAC04 \uC778\uAE30 \uCC28\uD2B8(\uC804\uCCB4 \uAE38\uC774) \u2192 15\uCD08 \uC0DD\uC131 \xB7 \uB9E4 \uC0C8\uB85C\uACE0\uCE68\uB9C8\uB2E4 \uAC31\uC2E0"))), /*#__PURE__*/React.createElement("nav", {
+  }, "\xB7 regionCode=KR/TH/JP/US \xB7 \uCD5C\uADFC 7\uC77C \uCD5C\uC2E0 \uC5C5\uB85C\uB4DC(\uC804\uCCB4 \uAE38\uC774) \u2192 15\uCD08 \uC0DD\uC131 \xB7 \uB9E4 \uC0C8\uB85C\uACE0\uCE68\uB9C8\uB2E4 \uAC31\uC2E0"))), /*#__PURE__*/React.createElement("nav", {
     className: "mb-16 flex flex-wrap gap-2 py-4 hr-thin border-b",
     style: {
       borderColor: 'var(--line)'
