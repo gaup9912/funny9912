@@ -1,7 +1,9 @@
 // netlify/functions/youtube.js
 // ─────────────────────────────────────────────────────────────
 // YouTube Data API v3 프록시
-// search.list로 국가별 짧은 인기 영상 검색 → videos.list → 60초 이하 필터
+// search.list: publishedAfter(최근 7일) + order=date(최신순)
+// → 국가별 "최근 7일 이내 최신 업로드" 영상. 길이 제한 없음(모든 길이).
+// videos.list로 조회수·길이·해시태그 보강.
 // ─────────────────────────────────────────────────────────────
 
 const corsHeaders = {
@@ -23,24 +25,19 @@ function formatViews(n) {
   return String(n);
 }
 
-async function fetchRegion(regionCode, apiKey, maxDur, debug) {
-  // 국가별 쇼츠 검색어 — "#shorts" + 국가 키워드로 짧은 인기 영상 검색
-  const queryMap = {
-    KR: '#shorts 쇼츠',
-    TH: '#shorts ไทย',
-    JP: '#shorts ショート',
-    US: '#shorts',
-  };
-  const q = encodeURIComponent(queryMap[regionCode] || '#shorts');
+async function fetchRegion(regionCode, apiKey, count, days, debug) {
+  // 최근 N일 전 시각 (RFC3339)
+  const after = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
-  // search: q 기반, videoDuration=short, 조회수순. relevanceLanguage 제거(과한 필터 방지)
+  // 1단계: search.list — 최근 N일 이내 업로드, 최신순, 해당 국가
+  //  q 없이 regionCode만 주면 그 나라의 최신 인기 영상이 폭넓게 잡힘
   const searchUrl = 'https://www.googleapis.com/youtube/v3/search'
     + '?part=snippet'
     + '&type=video'
-    + '&q=' + q
-    + '&videoDuration=short'
-    + '&order=viewCount'
+    + '&order=date'                       // 최신 업로드 순
+    + '&publishedAfter=' + encodeURIComponent(after)  // 최근 N일 이내
     + '&regionCode=' + regionCode
+    + '&relevanceLanguage=' + (regionCode === 'KR' ? 'ko' : regionCode === 'TH' ? 'th' : regionCode === 'JP' ? 'ja' : 'en')
     + '&maxResults=50'
     + '&key=' + apiKey;
 
@@ -49,9 +46,10 @@ async function fetchRegion(regionCode, apiKey, maxDur, debug) {
   if (sj.error) throw new Error(regionCode + ' search: ' + (sj.error.message || 'API error'));
 
   const ids = (sj.items || []).map(it => it.id && it.id.videoId).filter(Boolean);
-  if (debug) debug[regionCode] = { searchCount: ids.length };
+  if (debug) debug[regionCode] = { searchCount: ids.length, publishedAfter: after };
   if (ids.length === 0) return [];
 
+  // 2단계: videos.list — 길이·조회수·해시태그 보강
   const videosUrl = 'https://www.googleapis.com/youtube/v3/videos'
     + '?part=snippet,contentDetails,statistics'
     + '&id=' + ids.slice(0, 50).join(',')
@@ -70,6 +68,7 @@ async function fetchRegion(regionCode, apiKey, maxDur, debug) {
       views: formatViews(v.statistics && v.statistics.viewCount),
       viewCount: parseInt((v.statistics && v.statistics.viewCount) || 0),
       dur,
+      publishedAt: (v.snippet && v.snippet.publishedAt) || '',
       region: regionCode,
       hashtags: (desc.match(/#\S+/g) || []).slice(0, 6),
       thumbnail: v.snippet && v.snippet.thumbnails && v.snippet.thumbnails.high
@@ -79,13 +78,14 @@ async function fetchRegion(regionCode, apiKey, maxDur, debug) {
 
   if (debug) {
     debug[regionCode].durations = all.map(s => s.dur).sort((a, b) => a - b);
-    debug[regionCode].under60 = all.filter(s => s.dur > 0 && s.dur <= maxDur).length;
+    debug[regionCode].withViews = all.filter(s => s.viewCount > 0).length;
   }
 
+  // 길이 제한 없음(정상 영상만). 최신 업로드 순으로 정렬 후 count개.
   return all
-    .filter(s => s.dur > 0 && s.dur <= maxDur)
-    .sort((a, b) => b.viewCount - a.viewCount)
-    .slice(0, 5);
+    .filter(s => s.dur > 0)
+    .sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt))
+    .slice(0, count);
 }
 
 exports.handler = async (event) => {
@@ -100,11 +100,12 @@ exports.handler = async (event) => {
   try {
     const payload = JSON.parse(event.body || '{}');
     const regions = Array.isArray(payload.regions) && payload.regions.length ? payload.regions : ['KR', 'TH', 'JP', 'US'];
-    const maxDur = payload.maxDur || 60;
+    const count = Math.min(Math.max(parseInt(payload.count) || 12, 1), 20); // 국가별 노출 개수
+    const days = Math.min(Math.max(parseInt(payload.days) || 7, 1), 30);   // 최근 N일 (기본 7)
     const debug = {};
 
     const results = await Promise.all(
-      regions.map(rc => fetchRegion(rc, apiKey, maxDur, debug).catch(e => ({ __error: e.message, rc })))
+      regions.map(rc => fetchRegion(rc, apiKey, count, days, debug).catch(e => ({ __error: e.message, rc })))
     );
 
     const out = { errors: [], _debug: debug };
