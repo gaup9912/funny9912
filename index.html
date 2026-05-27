@@ -5,7 +5,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>THAI SHORTS LAB — Editorial</title>
-<meta name="description" content="전 세계 유튜브 최근 2일 인기 영상을 실시간 분석해 태국 광고식 병맛 + 영화급 15초 광고로 변환하는 플랫폼" />
+<meta name="description" content="전 세계 유튜브 최근 7일 인기 영상을 실시간 분석해 태국 광고식 병맛 + 영화급 15초 광고로 변환하는 플랫폼" />
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -409,8 +409,42 @@ function _callClaude() {
       var errText = yield res.text();
       throw new Error('Claude 프록시 ' + res.status + ': ' + errText.slice(0, 200));
     }
-    var data = yield res.json();
-    var raw = (data.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n');
+    // ── 스트리밍(SSE) 응답 읽기 ──
+    // Anthropic이 토큰을 흘려보내므로 content_block_delta의 text를 누적한다.
+    var raw = '';
+    var ct = res.headers.get('content-type') || '';
+    if (ct.indexOf('text/event-stream') !== -1 && res.body && res.body.getReader) {
+      var reader = res.body.getReader();
+      var decoder = new TextDecoder();
+      var buf = '';
+      while (true) {
+        var chunk = yield reader.read();
+        if (chunk.done) break;
+        buf += decoder.decode(chunk.value, { stream: true });
+        var lines = buf.split('\n');
+        buf = lines.pop(); // 마지막 미완성 줄은 보관
+        for (var li = 0; li < lines.length; li++) {
+          var line = lines[li];
+          if (line.indexOf('data:') !== 0) continue;
+          var jsonStr = line.slice(5).trim();
+          if (!jsonStr || jsonStr === '[DONE]') continue;
+          try {
+            var evt = JSON.parse(jsonStr);
+            if (evt.type === 'content_block_delta' && evt.delta) {
+              if (typeof evt.delta.text === 'string') raw += evt.delta.text;
+            } else if (evt.type === 'error') {
+              throw new Error((evt.error && evt.error.message) || 'Claude 스트림 오류');
+            }
+          } catch (e) {
+            // 파싱 안 되는 줄은 무시 (ping 등)
+          }
+        }
+      }
+    } else {
+      // 폴백: 일반 JSON 응답
+      var data = yield res.json();
+      raw = (data.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n');
+    }
     var cleaned = raw.replace(/```json|```/g, '').trim();
     try {
       return JSON.parse(cleaned);
