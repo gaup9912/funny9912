@@ -1,56 +1,57 @@
 // netlify/functions/claude.js
 // ─────────────────────────────────────────────────────────────
-// Anthropic API 프록시
-// 브라우저 → 이 함수 → Anthropic API → 다시 브라우저
-// API 키는 Netlify 환경변수(ANTHROPIC_API_KEY)에 숨겨져 노출되지 않음
-// CORS도 같은 사이트(/.netlify/functions/claude)라 자동 해결
+// Anthropic API 스트리밍 프록시 (Netlify Functions v2 / 스트리밍)
+// Claude 응답을 토큰이 생성되는 대로 브라우저로 흘려보냄(SSE 패스스루).
+// → 연결이 열려있는 동안은 Netlify 10초 제한에 걸리지 않음 (504 해결).
+// API 키는 환경변수 ANTHROPIC_API_KEY 에 숨김.
 // ─────────────────────────────────────────────────────────────
 
-exports.handler = async (event) => {
-  // CORS preflight 응답
+export default async (request) => {
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
   };
 
-  if (event.httpMethod === 'OPTIONS') {
-    return { statusCode: 204, headers: corsHeaders, body: '' };
+  if (request.method === 'OPTIONS') {
+    return new Response('', { status: 204, headers: corsHeaders });
   }
-
-  if (event.httpMethod !== 'POST') {
-    return {
-      statusCode: 405,
-      headers: corsHeaders,
-      body: JSON.stringify({ error: 'POST만 허용됩니다' }),
-    };
+  if (request.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'POST만 허용됩니다' }), {
+      status: 405,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    return {
-      statusCode: 500,
-      headers: corsHeaders,
-      body: JSON.stringify({
-        error: 'ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다. Netlify > Site settings > Environment variables에 추가하세요.',
-      }),
-    };
+    return new Response(JSON.stringify({
+      error: 'ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다. Netlify > Site settings > Environment variables에 추가하세요.',
+    }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 
+  let payload;
   try {
-    const payload = JSON.parse(event.body || '{}');
+    payload = await request.json();
+  } catch (e) {
+    return new Response(JSON.stringify({ error: '잘못된 요청 본문' }), {
+      status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
 
-    // 프론트에서 보낸 system / messages / max_tokens 그대로 전달
-    const body = {
-      model: payload.model || 'claude-sonnet-4-20250514',
-      max_tokens: payload.max_tokens || 1500,
-      messages: payload.messages || [],
-    };
-    if (payload.system) body.system = payload.system;
-    if (payload.tools) body.tools = payload.tools;
-    if (payload.mcp_servers) body.mcp_servers = payload.mcp_servers;
+  const body = {
+    model: payload.model || 'claude-sonnet-4-20250514',
+    max_tokens: payload.max_tokens || 1500,
+    messages: payload.messages || [],
+    stream: true, // 핵심: Anthropic에 스트리밍 요청
+  };
+  if (payload.system) body.system = payload.system;
+  if (payload.tools) body.tools = payload.tools;
+  if (payload.mcp_servers) body.mcp_servers = payload.mcp_servers;
 
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+  let upstream;
+  try {
+    upstream = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'x-api-key': apiKey,
@@ -59,19 +60,27 @@ exports.handler = async (event) => {
       },
       body: JSON.stringify(body),
     });
-
-    const data = await res.text(); // 그대로 패스스루
-
-    return {
-      statusCode: res.status,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      body: data,
-    };
   } catch (err) {
-    return {
-      statusCode: 502,
-      headers: corsHeaders,
-      body: JSON.stringify({ error: 'Claude API 프록시 오류: ' + err.message }),
-    };
+    return new Response(JSON.stringify({ error: 'Claude API 연결 오류: ' + err.message }), {
+      status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
+
+  if (!upstream.ok || !upstream.body) {
+    const errText = await upstream.text().catch(() => 'upstream error');
+    return new Response(JSON.stringify({ error: 'Claude API ' + upstream.status + ': ' + errText.slice(0, 300) }), {
+      status: upstream.status || 502,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
+  // SSE 스트림을 그대로 브라우저로 흘려보냄
+  return new Response(upstream.body, {
+    status: 200,
+    headers: {
+      ...corsHeaders,
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache',
+    },
+  });
 };
